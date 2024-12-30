@@ -840,26 +840,42 @@ class QueryBuilder(threading.local):
                     ).label(node.label)
                 )
 
-        for column in foreign_key_columns:
-            columns.append(node.model.c[column])
-
-        node._subquery = sa.select(*columns)
-
-        if from_obj is not None:
-            node._subquery = node._subquery.select_from(from_obj)
-
         parent_foreign_key_columns: list = self._get_column_foreign_keys(
             node.parent.model.columns,
             foreign_keys,
             table=node.parent.table,
             schema=node.parent.schema,
         )
+
+        if any(isinstance(node.parent.model.c[col].type, sa.ARRAY)for col in parent_foreign_key_columns):
+            for column in parent_foreign_key_columns:
+                columns.append(node.parent.model.c[column])
+        else:
+            for column in foreign_key_columns:
+                columns.append(node.model.c[column])
+
+        node._subquery = sa.select(*columns)
+
+        if from_obj is not None:
+            node._subquery = node._subquery.select_from(from_obj)
+
+
         where: list = []
         for i in range(len(foreign_key_columns)):
-            where.append(
-                node.model.c[foreign_key_columns[i]]
-                == node.parent.model.c[parent_foreign_key_columns[i]]
-            )
+            parent_column = node.parent.model.c[foreign_keys[node.parent.name][i]]
+            if isinstance(parent_column.type, sa.ARRAY):
+                # Use ANY for WHERE clause with array column
+                where.append(
+                    node.model.c[foreign_key_columns[i]] == sa.any_(parent_column)
+                )
+            else:
+                where.append(
+                    node.model.c[foreign_key_columns[i]] == parent_column
+                )
+            # where.append(
+            #     node.model.c[foreign_key_columns[i]]
+            #     == node.parent.model.c[parent_foreign_key_columns[i]]
+            # )
         node._subquery = node._subquery.where(sa.and_(*where))
 
         # NB do not apply filters to the child node as they are applied to the parent
@@ -867,9 +883,17 @@ class QueryBuilder(threading.local):
         #     node._subquery = node._subquery.where(sa.and_(*node._filters))
 
         if node.relationship.type == ONE_TO_MANY:
-            node._subquery = node._subquery.group_by(
-                *[node.model.c[key] for key in foreign_key_columns]
-            )
+            parent_column = node.parent.model.c[foreign_keys[node.parent.name][i]]
+            if isinstance(parent_column.type, sa.ARRAY):
+                node._subquery = node._subquery.group_by(
+                    *[node.parent.model.c[key] for key in parent_foreign_key_columns]
+                )
+            else:
+                # Original logic for regular foreign keys
+                node._subquery = node._subquery.group_by(
+                    *[node.model.c[key] for key in foreign_key_columns]
+                )
+
         node._subquery = node._subquery.alias()
 
         if not node.is_root:
