@@ -1003,7 +1003,10 @@ class Sync(Base, metaclass=Singleton):
                 doc: dict = {
                     "_id": self.get_doc_id(primary_keys, node.table),
                     "_index": self.index,
-                    "_source": row,
+                    # "_source": row,
+                    "_op_type": "update",
+                    "doc_as_upsert": True,
+                    "doc": row
                 }
 
                 if self.routing:

@@ -94,12 +94,12 @@ class Plugins(object):
         """Applies all plugins to each doc."""
         for doc in docs:
             for plugin in self.plugins:
-                doc["_source"] = plugin.transform(
-                    doc["_source"],
+                doc["doc"] = plugin.transform(
+                    doc["doc"],
                     _id=doc["_id"],
                     _index=doc["_index"],
                 )
-                if not doc["_source"]:
+                if not doc["doc"]:
                     yield
             yield doc
 
